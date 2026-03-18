@@ -62,7 +62,6 @@ const WMO_LABELS: Record<number, string> = {
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function windDirArrow(deg: number): string {
-  // Arrow points in the direction wind is blowing TO
   const dirs = ["↓", "↙", "←", "↖", "↑", "↗", "→", "↘"];
   const idx = Math.round((deg % 360) / 45) % 8;
   return dirs[idx];
@@ -71,8 +70,8 @@ function windDirArrow(deg: number): string {
 type ActiveTab = "temperature" | "precipitation" | "wind";
 
 interface HourlySlot {
-  time: string; // "05:00"
-  day: string; // "Wed"
+  time: string;
+  day: string;
   isToday: boolean;
   windSpeed: number;
   windDir: number;
@@ -80,6 +79,13 @@ interface HourlySlot {
   tempMax: number;
   tempMin: number;
   precipitation: number;
+}
+
+interface TempPoint {
+  time: string;
+  day: string;
+  isMidnight: boolean;
+  temp: number;
 }
 
 interface WeatherData {
@@ -90,6 +96,152 @@ interface WeatherData {
   weatherCode: number;
   dayName: string;
   slots: HourlySlot[];
+  tempPoints: TempPoint[];
+}
+
+function buildSmoothPath(points: { x: number; y: number }[]): string {
+  if (points.length < 2) return "";
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const cpX = (prev.x + curr.x) / 2;
+    d += ` C ${cpX} ${prev.y}, ${cpX} ${curr.y}, ${curr.x} ${curr.y}`;
+  }
+  return d;
+}
+
+function TempGraph({ points }: { points: TempPoint[] }) {
+  if (points.length === 0) return null;
+
+  const svgWidth = Math.max(points.length * 22, 1000);
+  const svgHeight = 120;
+  const padTop = 28;
+  const padBottom = 36;
+  const plotH = svgHeight - padTop - padBottom;
+
+  const temps = points.map((p) => p.temp);
+  const minT = Math.min(...temps) - 2;
+  const maxT = Math.max(...temps) + 2;
+  const range = maxT - minT || 1;
+
+  const toX = (i: number) => (i / (points.length - 1)) * (svgWidth - 40) + 20;
+  const toY = (t: number) => padTop + plotH - ((t - minT) / range) * plotH;
+
+  const pts = points.map((p, i) => ({ x: toX(i), y: toY(p.temp) }));
+  const linePath = buildSmoothPath(pts);
+
+  const areaPath = `${linePath} L ${pts[pts.length - 1].x} ${svgHeight - padBottom} L ${pts[0].x} ${svgHeight - padBottom} Z`;
+
+  const gradId = "tempGrad";
+
+  return (
+    <div
+      className="overflow-x-auto no-scrollbar mt-3"
+      style={{ borderRadius: 12 }}
+    >
+      <svg
+        role="img"
+        aria-label="48-hour temperature graph"
+        width={svgWidth}
+        height={svgHeight}
+        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+        style={{ display: "block" }}
+      >
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop
+              offset="0%"
+              stopColor="oklch(0.72 0.18 80)"
+              stopOpacity="0.35"
+            />
+            <stop
+              offset="100%"
+              stopColor="oklch(0.72 0.18 80)"
+              stopOpacity="0"
+            />
+          </linearGradient>
+        </defs>
+
+        {/* Area fill */}
+        <path d={areaPath} fill={`url(#${gradId})`} />
+
+        {/* Curve line */}
+        <path
+          d={linePath}
+          fill="none"
+          stroke="oklch(0.72 0.18 80)"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Dots + temperature labels every 3 hours */}
+        {points.map((p, i) => {
+          const show = i % 3 === 0;
+          return (
+            <g key={`pt-${p.day}-${p.time}`}>
+              {show && (
+                <>
+                  <circle
+                    cx={pts[i].x}
+                    cy={pts[i].y}
+                    r={3}
+                    fill="oklch(0.72 0.18 80)"
+                  />
+                  <text
+                    x={pts[i].x}
+                    y={pts[i].y - 8}
+                    textAnchor="middle"
+                    fontSize="9"
+                    fontWeight="600"
+                    fill="white"
+                  >
+                    {p.temp}
+                  </text>
+                </>
+              )}
+            </g>
+          );
+        })}
+
+        {/* Time labels every 3 hours */}
+        {points.map((p, i) => {
+          if (i % 3 !== 0) return null;
+          return (
+            <text
+              key={`time-${p.day}-${p.time}`}
+              x={pts[i].x}
+              y={svgHeight - padBottom + 14}
+              textAnchor="middle"
+              fontSize="8.5"
+              fill="oklch(0.65 0.06 230)"
+            >
+              {p.time}
+            </text>
+          );
+        })}
+
+        {/* Day name labels at midnight boundaries */}
+        {points.map((p, i) => {
+          if (!p.isMidnight) return null;
+          return (
+            <text
+              key={`day-${p.day}-${p.time}`}
+              x={pts[i].x}
+              y={svgHeight - padBottom + 28}
+              textAnchor="middle"
+              fontSize="10"
+              fontWeight="700"
+              fill="oklch(0.80 0.10 230)"
+            >
+              {p.day}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
 }
 
 export default function WeatherTab({ lang: _lang }: { lang: Language }) {
@@ -101,8 +253,7 @@ export default function WeatherTab({ lang: _lang }: { lang: Language }) {
   useEffect(() => {
     setLoading(true);
     const { lat, lon } = REGION_COORDS[region];
-    // Fix 1: merged into a single template literal (no plain-string segments)
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,weather_code&hourly=wind_speed_10m,wind_direction_10m,weather_code,precipitation&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&forecast_days=8&timezone=Asia%2FColombo`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,weather_code&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code,precipitation&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&forecast_days=8&timezone=Asia%2FColombo`;
 
     fetch(url)
       .then((r) => r.json())
@@ -114,14 +265,11 @@ export default function WeatherTab({ lang: _lang }: { lang: Language }) {
         const now = new Date();
         const todayIdx = now.getDay();
 
-        // Build 8 slots (one per day, picking 05:00 hour for each day)
         const slots: HourlySlot[] = [];
         for (let i = 0; i < 8; i++) {
-          const dateStr = daily.time[i] as string; // "2026-03-18"
-          // Fix 2: use template literal instead of string concatenation
+          const dateStr = daily.time[i] as string;
           const d = new Date(`${dateStr}T00:00:00`);
           const dayName = DAYS[d.getDay()];
-          // find hourly index for 05:00 of that day
           const hourKey = `${dateStr}T05:00`;
           const hIdx = (hourly.time as string[]).indexOf(hourKey);
           slots.push({
@@ -140,6 +288,24 @@ export default function WeatherTab({ lang: _lang }: { lang: Language }) {
           });
         }
 
+        // Build 48 hourly temp points
+        const tempPoints: TempPoint[] = [];
+        const hourlyTimes = hourly.time as string[];
+        const hourlyTemps = hourly.temperature_2m as number[];
+        for (let i = 0; i < Math.min(48, hourlyTimes.length); i++) {
+          const iso = hourlyTimes[i];
+          const dt = new Date(iso);
+          const hh = dt.getHours();
+          const timeLabel = `${String(hh).padStart(2, "0")}:00`;
+          const dayLabel = DAYS[dt.getDay()];
+          tempPoints.push({
+            time: timeLabel,
+            day: dayLabel,
+            isMidnight: hh === 0,
+            temp: Math.round(hourlyTemps[i]),
+          });
+        }
+
         setData({
           temp: Math.round(cur.temperature_2m),
           humidity: cur.relative_humidity_2m,
@@ -148,6 +314,7 @@ export default function WeatherTab({ lang: _lang }: { lang: Language }) {
           weatherCode: cur.weather_code,
           dayName: DAYS[todayIdx],
           slots,
+          tempPoints,
         });
         setLoading(false);
       })
@@ -162,9 +329,7 @@ export default function WeatherTab({ lang: _lang }: { lang: Language }) {
       className="flex flex-col min-h-screen"
       style={{ background: "#1a1a2e" }}
     >
-      {/* Header */}
       <header className="px-4 pt-5 pb-2">
-        {/* Region tabs */}
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
           {REGIONS.map((r) => (
             <button
@@ -261,7 +426,6 @@ export default function WeatherTab({ lang: _lang }: { lang: Language }) {
               {/* Horizontal scrollable forecast strip */}
               <div className="overflow-x-auto no-scrollbar mt-3">
                 <div className="flex gap-3" style={{ minWidth: "max-content" }}>
-                  {/* Fix 3: stable key using slot.day + index instead of bare index */}
                   {data.slots.map((slot, i) => (
                     <div
                       key={slot.day + String(i)}
@@ -276,7 +440,6 @@ export default function WeatherTab({ lang: _lang }: { lang: Language }) {
                           : "1px solid transparent",
                       }}
                     >
-                      {/* Top metric row */}
                       <p className="text-xs font-bold text-white">
                         {activeTab === "wind"
                           ? `${slot.windSpeed} km/h`
@@ -284,20 +447,17 @@ export default function WeatherTab({ lang: _lang }: { lang: Language }) {
                             ? `${slot.precipitation}mm`
                             : `${slot.tempMax}`}
                       </p>
-                      {/* Direction arrow (wind tab) */}
                       {activeTab === "wind" && (
                         <span className="text-base text-blue-300">
                           {windDirArrow(slot.windDir)}
                         </span>
                       )}
-                      {/* Time */}
                       <p
                         className="text-[10px]"
                         style={{ color: "oklch(0.60 0.06 230)" }}
                       >
                         {slot.time}
                       </p>
-                      {/* Day */}
                       <p
                         className="text-xs font-bold"
                         style={{
@@ -306,11 +466,9 @@ export default function WeatherTab({ lang: _lang }: { lang: Language }) {
                       >
                         {slot.day}
                       </p>
-                      {/* Weather icon */}
                       <span className="text-xl">
                         {WMO_ICONS[slot.weatherCode] ?? "🌤️"}
                       </span>
-                      {/* High / Low */}
                       <p className="text-xs font-bold text-white">
                         {slot.tempMax}
                       </p>
@@ -324,6 +482,22 @@ export default function WeatherTab({ lang: _lang }: { lang: Language }) {
                   ))}
                 </div>
               </div>
+
+              {/* Temperature graph — 48-hour line chart */}
+              {data.tempPoints.length > 0 && (
+                <div
+                  className="mt-4 pt-3"
+                  style={{ borderTop: "1px solid oklch(0.30 0.08 230 / 0.4)" }}
+                >
+                  <p
+                    className="text-[10px] font-semibold uppercase tracking-widest mb-1"
+                    style={{ color: "oklch(0.72 0.18 80)" }}
+                  >
+                    48-Hour Temperature
+                  </p>
+                  <TempGraph points={data.tempPoints} />
+                </div>
+              )}
             </div>
 
             {/* Farming advice */}
