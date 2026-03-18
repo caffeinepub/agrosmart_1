@@ -5,6 +5,9 @@ import KnowledgeTab from "@/components/KnowledgeTab";
 import MarketTab from "@/components/MarketTab";
 import ProfileTab from "@/components/ProfileTab";
 import WeatherTab from "@/components/WeatherTab";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Toaster } from "@/components/ui/sonner";
 import type { Language } from "@/i18n";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -21,6 +24,27 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 
 const queryClient = new QueryClient();
+
+const PROFILE_KEY = "farmerProfile";
+
+interface FarmerProfile {
+  name: string;
+  location: string;
+}
+
+function loadProfile(): FarmerProfile | null {
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as FarmerProfile;
+  } catch {
+    return null;
+  }
+}
+
+function saveProfile(profile: FarmerProfile) {
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+}
 
 type Tab =
   | "home"
@@ -140,18 +164,177 @@ function SplashScreen({ onDone }: { onDone: () => void }) {
   );
 }
 
+function OnboardingScreen({
+  onComplete,
+}: { onComplete: (name: string, location: string) => void }) {
+  const [name, setName] = useState("");
+  const [location, setLocation] = useState("");
+  const [error, setError] = useState("");
+
+  function handleSubmit() {
+    if (!name.trim() || !location.trim()) {
+      setError("Please fill in both your name and location.");
+      return;
+    }
+    setError("");
+    onComplete(name.trim(), location.trim());
+  }
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-40 flex flex-col items-center justify-center px-6"
+      style={{
+        background:
+          "radial-gradient(ellipse at 40% 40%, oklch(0.28 0.12 145) 0%, oklch(0.10 0.04 145) 100%)",
+      }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, scale: 0.97 }}
+      transition={{ duration: 0.35 }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.55, ease: "easeOut", delay: 0.1 }}
+        className="w-full max-w-[340px] flex flex-col items-center gap-6"
+      >
+        {/* Logo */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-20 h-20 rounded-3xl bg-white/10 backdrop-blur-sm flex items-center justify-center text-4xl border border-white/15 shadow-xl">
+            🌱
+          </div>
+          <h1 className="text-3xl font-display font-bold text-white tracking-tight">
+            AgroSmart
+          </h1>
+        </div>
+
+        {/* Welcome heading */}
+        <div className="text-center">
+          <h2 className="text-xl font-display font-bold text-white">
+            Welcome, Farmer!
+          </h2>
+          <p
+            className="mt-1 text-sm font-body"
+            style={{ color: "oklch(0.70 0.08 145)" }}
+          >
+            Tell us about yourself
+          </p>
+        </div>
+
+        {/* Form card */}
+        <div
+          className="w-full rounded-2xl p-5 space-y-4"
+          style={{
+            background: "oklch(0.16 0.05 145 / 0.85)",
+            border: "1px solid oklch(0.28 0.08 145)",
+            backdropFilter: "blur(16px)",
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label className="text-sm font-semibold text-white/80">
+              Your Name
+            </Label>
+            <Input
+              data-ocid="onboarding.name.input"
+              placeholder="e.g. Saman Perera"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+              className="h-11 text-white placeholder:text-white/30 font-body"
+              style={{
+                background: "oklch(0.15 0.04 145)",
+                borderColor: "oklch(0.28 0.08 145)",
+              }}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-semibold text-white/80">
+              Your Location
+            </Label>
+            <Input
+              data-ocid="onboarding.location.input"
+              placeholder="e.g. Colombo, Kandy, Galle…"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+              className="h-11 text-white placeholder:text-white/30 font-body"
+              style={{
+                background: "oklch(0.15 0.04 145)",
+                borderColor: "oklch(0.28 0.08 145)",
+              }}
+            />
+          </div>
+
+          {error && (
+            <p
+              data-ocid="onboarding.error_state"
+              className="text-xs text-red-400"
+            >
+              {error}
+            </p>
+          )}
+
+          <Button
+            data-ocid="onboarding.submit_button"
+            type="button"
+            onClick={handleSubmit}
+            className="w-full h-12 text-base font-bold font-body rounded-xl border-0"
+            style={{
+              background:
+                "linear-gradient(135deg, oklch(0.52 0.18 145) 0%, oklch(0.60 0.15 80) 100%)",
+              color: "white",
+            }}
+          >
+            Get Started 🚀
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function AppContent() {
   const [activeTab, setActiveTab] = useState<Tab>("home");
   const [lang, setLang] = useState<Language>("en");
   const [showSplash, setShowSplash] = useState(true);
+  const [profile, setProfile] = useState<FarmerProfile | null>(null);
+  const [splashDone, setSplashDone] = useState(false);
+
+  function handleSplashDone() {
+    const saved = loadProfile();
+    setProfile(saved);
+    setSplashDone(true);
+    setShowSplash(false);
+  }
+
+  function handleOnboardingComplete(name: string, location: string) {
+    const p = { name, location };
+    saveProfile(p);
+    setProfile(p);
+  }
+
+  function handleUpdateProfile(name: string, location: string) {
+    const p = { name, location };
+    saveProfile(p);
+    setProfile(p);
+  }
+
+  const showOnboarding = splashDone && !profile;
+  const showApp = splashDone && !!profile;
 
   return (
     <>
       <AnimatePresence>
-        {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
+        {showSplash && <SplashScreen onDone={handleSplashDone} />}
       </AnimatePresence>
 
-      {!showSplash && (
+      <AnimatePresence>
+        {showOnboarding && (
+          <OnboardingScreen onComplete={handleOnboardingComplete} />
+        )}
+      </AnimatePresence>
+
+      {showApp && (
         <div className="min-h-screen flex flex-col bg-background">
           {/* Main content */}
           <main className="flex-1 overflow-y-auto pb-20">
@@ -177,7 +360,13 @@ function AppContent() {
                   {activeTab === "fertilizer" && <FertilizerTab lang={lang} />}
                   {activeTab === "tips" && <KnowledgeTab lang={lang} />}
                   {activeTab === "profile" && (
-                    <ProfileTab lang={lang} setLang={setLang} />
+                    <ProfileTab
+                      lang={lang}
+                      setLang={setLang}
+                      farmerName={profile.name}
+                      farmerLocation={profile.location}
+                      onUpdateProfile={handleUpdateProfile}
+                    />
                   )}
                 </motion.div>
               </AnimatePresence>
