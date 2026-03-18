@@ -4,7 +4,7 @@ import { Label } from "@/components/ui/label";
 import { useAddFertilizerSchedule, useMySchedule } from "@/hooks/useQueries";
 import type { Language } from "@/i18n";
 import { t } from "@/i18n";
-import { Bell, CheckCircle2, Sprout } from "lucide-react";
+import { Bell, Sprout } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -35,40 +35,8 @@ export default function FertilizerTab({ lang }: { lang: Language }) {
     }
   };
 
-  const SAMPLE_SCHEDULE = {
-    cropType: "Paddy",
-    plantingDate: "2026-03-01",
-    tasks: [
-      {
-        dayOffset: BigInt(14),
-        fertilizerName: "Urea",
-        amount: "50 kg/acre",
-        notes: "Apply after first weeding, broadcast evenly",
-      },
-      {
-        dayOffset: BigInt(35),
-        fertilizerName: "Triple Super Phosphate",
-        amount: "25 kg/acre",
-        notes: "Mix with top soil before irrigation",
-      },
-      {
-        dayOffset: BigInt(60),
-        fertilizerName: "Muriate of Potash",
-        amount: "30 kg/acre",
-        notes: "Apply before panicle initiation stage",
-      },
-      {
-        dayOffset: BigInt(90),
-        fertilizerName: "Foliar Spray (Zn)",
-        amount: "2 g/liter",
-        notes: "Spray on leaves in early morning or evening",
-      },
-    ],
-  };
-
-  const displaySchedule =
-    schedule?.tasks && schedule.tasks.length > 0 ? schedule : SAMPLE_SCHEDULE;
-  const nextTask = displaySchedule.tasks?.[0];
+  const hasSchedule = !!(schedule?.tasks && schedule.tasks.length > 0);
+  const nextTask = hasSchedule ? schedule!.tasks[0] : null;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -89,27 +57,51 @@ export default function FertilizerTab({ lang }: { lang: Language }) {
       </header>
 
       <div className="p-4 space-y-4">
-        {/* Current crop highlight — emerald gradient */}
-        <div
-          className="rounded-2xl p-4 flex items-center gap-3"
-          style={{
-            background:
-              "linear-gradient(135deg, oklch(0.38 0.16 145) 0%, oklch(0.25 0.12 145) 100%)",
-            border: "1px solid oklch(0.45 0.14 145 / 0.4)",
-          }}
-        >
-          <CheckCircle2 className="w-6 h-6 flex-shrink-0 text-white" />
-          <div>
-            <p className="font-display font-bold text-base text-white">
-              Crop: {displaySchedule.cropType}
-            </p>
-            <p className="text-white/70 text-sm">
-              Planted: {displaySchedule.plantingDate}
-            </p>
+        {/* Crop card — only when real schedule exists */}
+        {hasSchedule ? (
+          <div
+            className="rounded-2xl p-4 flex items-center gap-3"
+            style={{
+              background:
+                "linear-gradient(135deg, oklch(0.38 0.16 145) 0%, oklch(0.25 0.12 145) 100%)",
+              border: "1px solid oklch(0.45 0.14 145 / 0.4)",
+            }}
+          >
+            <Sprout className="w-6 h-6 flex-shrink-0 text-white" />
+            <div>
+              <p className="font-display font-bold text-base text-white">
+                Crop: {schedule!.cropType}
+              </p>
+              <p className="text-white/70 text-sm">
+                Planted: {schedule!.plantingDate}
+              </p>
+            </div>
           </div>
-        </div>
+        ) : (
+          !isLoading && (
+            <div
+              data-ocid="fertilizer.empty_state"
+              className="rounded-2xl p-6 flex flex-col items-center gap-2 text-center"
+              style={{
+                background: "oklch(0.18 0.05 145)",
+                border: "1px dashed oklch(0.35 0.10 145 / 0.5)",
+              }}
+            >
+              <Sprout
+                className="w-8 h-8"
+                style={{ color: "oklch(0.52 0.18 145)" }}
+              />
+              <p className="font-semibold text-foreground text-sm">
+                No schedule yet.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Add your crop below to get started.
+              </p>
+            </div>
+          )
+        )}
 
-        {/* Next fertilizer — gold-tinted */}
+        {/* Next fertilizer — gold-tinted, only when schedule exists */}
         {nextTask && (
           <div
             className="rounded-2xl p-4"
@@ -158,7 +150,7 @@ export default function FertilizerTab({ lang }: { lang: Language }) {
               />
             ))}
           </div>
-        ) : (
+        ) : hasSchedule ? (
           <div
             data-ocid="fertilizer.schedule.card"
             className="rounded-2xl overflow-hidden"
@@ -173,7 +165,7 @@ export default function FertilizerTab({ lang }: { lang: Language }) {
             >
               Schedule
             </p>
-            {displaySchedule.tasks?.map((task, i) => (
+            {schedule!.tasks.map((task, i) => (
               <div key={`${task.dayOffset}-${task.fertilizerName}`}>
                 {i > 0 && (
                   <div
@@ -225,7 +217,7 @@ export default function FertilizerTab({ lang }: { lang: Language }) {
               </div>
             ))}
           </div>
-        )}
+        ) : null}
 
         {/* Simple trend line */}
         <div
